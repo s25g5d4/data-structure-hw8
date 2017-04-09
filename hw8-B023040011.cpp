@@ -1,5 +1,5 @@
 ﻿/**
-* purpose: Huffman Encoding compression/uncompression
+* purpose: huffman Encoding compression/uncompression
 * name: 吳宗哲 B023040011
 * Date: 2015/01/06
 */
@@ -13,67 +13,76 @@
 #include <string>
 #include <cstring>
 #include <functional>
+#include <memory>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-namespace MyHuffman
+namespace my_huffman
 {
-    /** Huffman Tree Node */
-    struct HuffmanNode
+    /** huffman Tree Node */
+    struct huffman_node
     {
         /** Data for each node. positive for leaf node, negative for intermediate node */
-        int data;
+        int32_t data;
         /** Node weight */
         int weight;
         /** Left child pointer */
-        HuffmanNode *left;
+        std::shared_ptr<huffman_node> left;
         /** Right child pointer */
-        HuffmanNode *right;
+        std::shared_ptr<huffman_node> right;
 
         /** Constructor */
-        HuffmanNode(int data, int weight, HuffmanNode *left = NULL, HuffmanNode *right = NULL)
+        huffman_node(int data, int weight, huffman_node *left = NULL, huffman_node *right = NULL)
+        : data(data), weight(weight), left(left), right(right)
         {
-            this->data = data;
-            this->weight = weight;
-            this->left = left;
-            this->right = right;
+
         }
 
         /** Copy constructor */
-        HuffmanNode(const HuffmanNode &rhs)
-        {
-            if (&rhs == this) {
-                return;
-            }
+        // huffman_node(const huffman_node &rhs)
+        // {
+        //     if (&rhs == this) {
+        //         return;
+        //     }
 
-            this->data = rhs.data;
-            this->weight = rhs.weight;
-            this->left = rhs.left;
-            this->right = rhs.right;
+        //     this->data = rhs.data;
+        //     this->weight = rhs.weight;
+        //     this->left = rhs.left;
+        //     this->right = rhs.right;
+        // }
+
+        /** Comparer (for node weight) */
+        bool operator<(const huffman_node &rhs) const
+        {
+            if (this->weight < rhs.weight) {
+                return true;
+            }
+            else if (this->weight == rhs.weight) {
+                return !is_data_bigger_then(rhs);
+            }
+            else {
+                return false;
+            }
         }
 
         /** Comparer (for node weight) */
-        bool operator<(const HuffmanNode &rhs) const
+        bool operator>(const huffman_node &rhs) const
         {
-            if (this->weight == rhs.weight) {
-                return !isDataBiggerThan(rhs);
+            if (this->weight > rhs.weight) {
+                return true;
+            }
+            else if (this->weight == rhs.weight) {
+                return is_data_bigger_then(rhs);
             }
             else {
-                return (this->weight < rhs.weight);
-            }
-        }
-
-        /** Comparer (for node weight) */
-        bool operator>(const HuffmanNode &rhs) const
-        {
-            if (this->weight == rhs.weight) {
-                return isDataBiggerThan(rhs);
-            }
-            else {
-                return (this->weight > rhs.weight);
+                return false;
             }
         }
 
         /** if two node have equal weight, compare data value */
-        inline bool isDataBiggerThan(const HuffmanNode &rhs) const
+        inline bool is_data_bigger_then(const huffman_node &rhs) const
         {
             int l_data = this->data < 0 ? -(this->data) : this->data;
             int r_data = rhs.data < 0 ? -(rhs.data) : rhs.data;
@@ -82,220 +91,125 @@ namespace MyHuffman
         }
     };
 
-    /** Base class for Huffman Encode and Decode */
-    class Huffman
+    /** Base class for huffman Encode and Decode */
+    class huffman
     {
     protected:
         /** Char to huffman code */
-        std::vector< std::vector<bool> > _char_table;
-        /** Huffman tree root */
-        HuffmanNode *_root;
+        std::vector< std::vector<uint8_t> > _char_table;
+        /** huffman tree root */
+        std::shared_ptr<huffman_node> _root;
         /** Input stream */
-        std::istream *_input;
+        const void *_input;
         /** Input stream size */
-        unsigned int _file_size;
+        uint32_t _file_size;
 
-        /** Turn Huffman tree to char table */
-        void _buildCharTable(const HuffmanNode *root)
+        /** Turn huffman tree to char table */
+        void _build_char_table()
         {
             using namespace std;
 
             // If root is leaf node (i.e. only one kind of char in input file)
-            if (root->data > 0) {
-                _char_table.at(root->data).push_back(0);
+            if (_root->data > 0) {
+                _char_table.at(_root->data).push_back(0);
 
                 return;
             }
             /** Left child huffman code */
-            vector<bool> l_code;
+            vector<uint8_t> l_code;
             /** Right child huffman code */
-            vector<bool> r_code;
+            vector<uint8_t> r_code;
 
             l_code.push_back(0);
             r_code.push_back(1);
 
-            _buildCharTable(root->left, l_code);
-            _buildCharTable(root->right, r_code);
+            _build_char_table(_root->left, l_code);
+            _build_char_table(_root->right, r_code);
         }
 
-        /** Turn Huffman tree to char table, with recursion */
-        void _buildCharTable(const HuffmanNode *root, std::vector<bool> code)
+        /** Turn huffman tree to char table, with recursion */
+        void _build_char_table(std::shared_ptr<huffman_node> &current, std::vector<uint8_t> &code)
         {
             using namespace std;
 
-            if (root->data >= 0) {
-                _char_table.at(root->data) = code;
+            if (current->data >= 0) {
+                _char_table.at(current->data) = code;
 
                 return;
             }
 
             /** Left child huffman code */
-            vector<bool> l_code = code;
+            auto l_code = code;
             /** Right child huffman code */
-            vector<bool> r_code = code;
+            auto r_code = code;
 
             l_code.push_back(0);
             r_code.push_back(1);
 
-            _buildCharTable(root->left, l_code);
-            _buildCharTable(root->right, r_code);
+            _build_char_table(current->left, l_code);
+            _build_char_table(current->right, r_code);
         }
 
     public:
         /** Constructor */
-        Huffman(std::istream &input)
+        huffman(const void *input, size_t size)
+        : _input(input), _file_size(size)
         {
             // for each char (0~255)
             _char_table.resize(256);
-            _input = &input;
         }
 
         /** Destructor */
-        ~Huffman()
-        {
-            using namespace std;
+        // ~huffman()
+        // {
+        //     using namespace std;
 
-            // Delete every Huffman node
-            if (_root != NULL) {
-                /** Stack for next one to remove */
-                stack<HuffmanNode *> to_remove;
-                to_remove.push(_root);
+        //     // Delete every huffman node
+        //     if (_root != NULL) {
+        //         /** Stack for next one to remove */
+        //         stack<huffmaconst void **buf, int *buflenn_node *> to_remove;
+        //         to_remove.push(_root);
 
-                while (!to_remove.empty()) {
-                    /** Current node to remove */
-                    HuffmanNode *temp = to_remove.top();
-                    to_remove.pop();
+        //         while (!to_remove.empty()) {
+        //             /** Current node to remove */
+        //             huffman_node *temp = to_remove.top();
+        //             to_remove.pop();
 
-                    // If has child, push into stack for later deletion
-                    if (temp->left != NULL) {
-                        to_remove.push(temp->left);
-                    }
-                    if (temp->right != NULL) {
-                        to_remove.push(temp->right);
-                    }
+        //             // If has child, push into stack for later deletion
+        //             if (temp->left != NULL) {
+        //                 to_remove.push(temp->left);
+        //             }
+        //             if (temp->right != NULL) {
+        //                 to_remove.push(temp->right);
+        //             }
 
-                    delete temp;
-                }
-            }
-        }
-
-        /** Print all huffman code */
-        void printHuffmanTable()
-        {
-            using namespace std;
-
-            /** Iterator for char table */
-            vector< vector<bool> >::iterator it;
-            for (it = _char_table.begin(); it != _char_table.end(); ++it) {
-                if (it->size() == 0) {
-                    continue;
-                }
-
-                // Print char
-                cout << static_cast<char>(it - _char_table.begin()) << ": ";
-                // Print huffman code
-                for (unsigned int i = 0; i < it->size(); ++i) {
-                    cout << static_cast<int>(it->at(i));
-                }
-                cout << endl;
-            }
-        }
+        //             delete temp;
+        //         }
+        //     }
+        // }
 
         /** Dummy function for derived classes */
-        void virtual buildHuffmanTable(std::istream &input)
+        void virtual build_huffman_tree()
         {
 
         }
 
-        /** Dummy function for derived classes */
-        void virtual write(std::ostream &output)
-        {
+        int virtual write(const void **buf, int *buflen) = 0;
 
-        }
-    };
-
-    /** Huffman encode */
-    class HuffmanEncode : public Huffman
-    {
-    public:
-        /** Constructor */
-        HuffmanEncode(std::istream &input) : Huffman(input)
-        {
-            buildHuffmanTable(input);
-        }
-
-        /** Build Huffman tree from input stream */
-        void virtual buildHuffmanTable(std::istream &input)
+        std::vector<uint32_t> write_huffman_code()
         {
             using namespace std;
-
-            /** Count occurrence of every char in input stream */
-            int freq[256] = { 0 };
-
-            /** Get char from input stream */
-            int c = input.get();
-            while (!input.eof()) {
-                ++freq[c];
-                c = input.get();
-            }
-
-            // Clean flags (such as 'eofbit') for 'tellg()' to function
-            input.clear();
-            // Since the stream has reached the end, the position is file size
-            _file_size = input.tellg();
-
-            /** A min heap queue */
-            priority_queue<HuffmanNode, vector<HuffmanNode>, greater<HuffmanNode> > table;
-
-            for (int i = 0; i < 256; ++i) {
-                if (freq[i] == 0) {
-                    continue;
-                }
-
-                table.push(HuffmanNode(i, freq[i]));
-            }
-
-            // Priority queue guarantees that the top is the least
-            // Pop the least two and merge them
-            while (table.size() > 1) {
-                HuffmanNode *n1 = new HuffmanNode(table.top());
-                table.pop();
-
-                HuffmanNode *n2 = new HuffmanNode(table.top());
-                table.pop();
-
-                // Only leaf node have positive data value
-                table.push(HuffmanNode(n1->data < 0 ? n1->data : -(n1->data) - 1, n1->weight + n2->weight, n1, n2));
-            }
-
-            _root = new HuffmanNode(table.top());
-            table.pop();
-
-            _buildCharTable(_root);
-        }
-
-        /** Write encoded huffman code and header to output stream */
-        void virtual write(std::ostream &output)
-        {
-            using namespace std;
-
-            // Rewind to the beginning of file
-            _input->clear();
-            _input->seekg(0, ios::beg);
-
-            output.write(reinterpret_cast<char *>(&_file_size), sizeof(int));
-
-            // Write huffman codebook using post order
-            /** No recursion, just loop! */
-            stack<HuffmanNode *> huff_tree;
+            
+            stack< shared_ptr<huffman_node> > huff_tree;
             huff_tree.push(_root);
+            vector<uint32_t> tree;
 
             while (!huff_tree.empty()) {
                 /** next node in post order to write to output stream */
-                HuffmanNode *current = huff_tree.top();
+                shared_ptr<huffman_node> current = huff_tree.top();
                 huff_tree.pop();
 
-                output.write(reinterpret_cast<char *>(&(current->data)), sizeof(int));
+                tree.push_back( htonl( *(reinterpret_cast<uint32_t *>(&current->data)) ) );
 
                 if (current->right != NULL) {
                     huff_tree.push(current->right);
@@ -305,81 +219,210 @@ namespace MyHuffman
                 }
             }
 
-            /** Buffer for writing bits */
-            char buf[64] = { 0 };
-            /** Current write position */
-            int pos = 0;
-
-            /** Char to encode */
-            int ch = _input->get();
-            while (!_input->eof()) {
-                /** Iterator for vector<bool> */
-                vector<bool>::iterator it;
-
-                for (it = _char_table.at(ch).begin(); it != _char_table.at(ch).end(); ++it) {
-                    // Magic, don't touch
-                    buf[pos / 8] |= ((*it) << (pos % 8));
-                    ++pos;
-                }
-
-                // The tree height is less than 256 (i.e. the code is less than 256 bits)
-                // It is safe to write 256 bits for each time
-                if (pos >= 256) {
-                    output.write(buf, 32);
-
-                    memmove(buf, buf + 32, pos / 8 + (pos % 8 == 0 ? 0 : 1));
-                    memset(buf + 32, 0, 32);
-
-                    pos -= 256;
-                }
-
-                ch = _input->get();
-            }
-
-            // In case there are still some trailing bits
-            output.write(buf, pos / 8 + (pos % 8 == 0 ? 0 : 1));
+            return tree;
         }
     };
 
-    /** Huffman decode */
-    class HuffmanDecode : public Huffman
+    /** huffman encode */
+    class huffman_encode : public huffman
     {
     private:
-        int _header_offset; /** Where data starts */
+        uint8_t *_result;
+        size_t _result_size;
 
     public:
         /** Constructor */
-        HuffmanDecode(std::istream &input) : Huffman(input)
+        huffman_encode(const void *input, size_t size)
+        : huffman(input, size), _result(NULL), _result_size(0)
         {
-            buildHuffmanTree(input);
+            build_huffman_tree();
+            _build_char_table();
         }
 
-        /** Build Huffman tree from input stream */
-        void virtual buildHuffmanTree(std::istream &input)
+        ~huffman_encode()
+        {
+            free(_result);
+        }
+
+        /** Build huffman tree from input stream */
+        void virtual build_huffman_tree()
         {
             using namespace std;
 
-            _input->read(reinterpret_cast<char *>(&_file_size), sizeof(int));
+            /** Count occurrence of every char in input stream */
+            int freq[256] = { 0 };
+
+            /** Get char from input stream */
+            for (size_t i = 0; i < _file_size; ++i) {
+                uint8_t c = *(reinterpret_cast<const uint8_t *>(_input) + i);
+                freq[c] += 1;
+            }
+
+            /** A min heap queue */
+            priority_queue< huffman_node, vector<huffman_node>, greater<huffman_node> > table;
+
+            for (int i = 0; i < 256; ++i) {
+                if (freq[i] != 0) {
+                    table.push(huffman_node(i, freq[i]));
+                }
+            }
+
+            // Priority queue guarantees that the top is the least
+            // Pop the least two and merge them
+            while (table.size() > 1) {
+                huffman_node *n1 = new huffman_node(table.top());
+                table.pop();
+
+                huffman_node *n2 = new huffman_node(table.top());
+                table.pop();
+
+                // Only leaf node have positive data value
+                table.push(
+                    huffman_node(
+                        n1->data < 0 ? n1->data : -(n1->data) - 1,
+                        n1->weight + n2->weight,
+                        n1,
+                        n2
+                    )
+                );
+            }
+
+            _root.reset(new huffman_node(table.top()));
+            table.pop();
+        }
+
+        /** Write encoded huffman code and header to output stream */
+        int virtual write(const void **buf, int *buflen)
+        {
+            using namespace std;
+
+            if (_result != NULL) {
+                *buf = _result;
+                *buflen = static_cast<int>(_result_size);
+                return 0;
+            }
+
+            vector<uint32_t> header = write_huffman_code();
+            header.insert(header.begin(), htonl(_file_size));
+            
+            size_t header_size = header.size() * sizeof (uint32_t);
+
+            _result = (uint8_t *) malloc(_file_size / 2 + header_size);
+            if (_result == NULL) {
+                *buf = NULL;
+                *buflen = 0;
+                return -1;
+            }
+            _result_size = _file_size / 2 + header_size;
+            memcpy(_result, &header.front(), header_size);
+            memset(_result + header_size, 0, _result_size - header_size);
+
+            unsigned int result_bytes = header_size;
+            unsigned int result_bit_offset = 0;
+
+            for (size_t pos = 0; pos < _file_size; ++pos) {
+                auto code = _char_table.at(reinterpret_cast<const uint8_t *>(_input)[pos]);
+                for (auto bit : code) {
+                    _result[result_bytes] |= ( bit << (result_bit_offset) );
+                    result_bit_offset += 1;
+                    if (result_bit_offset >= 8) {
+                        result_bytes += 1;
+                        result_bit_offset = 0;
+                    }
+                }
+
+                if (result_bytes + 256 >= _result_size) {
+                    uint8_t *new_result = (uint8_t *) realloc(_result, _result_size + 1024);
+                    if (new_result == NULL) {
+                        free(_result);
+                        _result_size = 0;
+                        _result = NULL;
+                        *buf = NULL;
+                        *buflen = 0;
+                        return -1;
+                    }
+                    memset(new_result + _result_size , 0, 1024);
+                    _result = new_result;
+                    _result_size += 1024;
+                }
+            }
+
+            _result_size = (result_bit_offset > 0) ? result_bytes + 1 : result_bytes;
+            uint8_t *new_result = (uint8_t *) realloc(_result, _result_size);
+            if (new_result == NULL) {
+                free(_result);
+                _result_size = 0;
+                _result = NULL;
+                *buf = NULL;
+                *buflen = 0;
+                return -1;
+            }
+            _result = new_result;
+
+            *buf = _result;
+            *buflen = static_cast<int>(_result_size);
+
+            return 0;
+        }
+    };
+
+    /** huffman decode */
+    class huffman_decode : public huffman
+    {
+    private:
+        uint8_t *_result;
+        uint32_t _original_size;
+        size_t _pos;
+
+    public:
+        /** Constructor */
+        huffman_decode(const void *input, size_t size)
+        : huffman(input, size), _result(NULL), _original_size(0), _pos(0)
+        {
+            build_huffman_tree();
+        }
+
+        ~huffman_decode()
+        {
+            free(_result);
+        }
+
+        /** Build huffman tree from input stream */
+        void virtual build_huffman_tree()
+        {
+            using namespace std;
+
+            memcpy(&_original_size, _input, sizeof (_original_size));
+            _original_size = ntohl(_original_size);
+            _pos += sizeof (_original_size);
 
             /** Read the tree saved in input stream */
-            int tree_data;
-            _input->read(reinterpret_cast<char *>(&tree_data), sizeof(int));
+            uint32_t u_node_data;
+            memcpy(&u_node_data, reinterpret_cast<const uint8_t *>(_input) + _pos, sizeof (u_node_data));
+            u_node_data = ntohl(u_node_data);
+            _pos += sizeof (u_node_data);
 
-            _root = new HuffmanNode(tree_data, 0);
+            int32_t node_data = *(reinterpret_cast<int32_t *>(&u_node_data));
+
+            _root.reset(new huffman_node(node_data, 0));
 
             // In case the root might not have children (i.e. root is leaf node)
-            if (tree_data < 0) {
+            if (node_data < 0) {
                 /** For restore tree from post order, without recursion */
-                stack<HuffmanNode *> huff_tree;
+                stack< shared_ptr<huffman_node> > huff_tree;
                 huff_tree.push(_root);
 
                 while (!huff_tree.empty()) {
                     /** Current tree node */
-                    HuffmanNode *current = huff_tree.top();
+                    shared_ptr<huffman_node> current = huff_tree.top();
 
-                    _input->read(reinterpret_cast<char *>(&tree_data), sizeof(int));
+                    memcpy(&u_node_data, reinterpret_cast<const uint8_t *>(_input) + _pos, sizeof (u_node_data));
+                    u_node_data = ntohl(u_node_data);
+                    _pos += sizeof (u_node_data);
 
-                    HuffmanNode *new_node = new HuffmanNode(tree_data, 0);
+                    node_data = *(reinterpret_cast<int32_t *>(&u_node_data));
+
+                    shared_ptr<huffman_node> new_node(new huffman_node(node_data, 0));
 
                     // Left child first (post order)
                     if (current->left == NULL) {
@@ -392,164 +435,143 @@ namespace MyHuffman
                     }
 
                     // Not leaf node
-                    if (tree_data < 0) {
+                    if (node_data < 0) {
                         huff_tree.push(new_node);
                     }
                 }
             }
 
-            _header_offset = _input->tellg();
-
-            _buildCharTable(_root);
+            _build_char_table();
         }
 
-        /** Write decoded data to output stream */
-        void virtual write(std::ostream &output)
+        int virtual write(const void **buf, int *buflen)
         {
             using namespace std;
 
-            _input->clear();
-            _input->seekg(_header_offset);
+            if (_result != NULL) {
+                *buf = _result;
+                *buflen = static_cast<int>(_original_size);
+                return 0;
+            }
 
-            /** Buffer for decoded char */
-            char buf[32];
-            /** Tree tranversal */
-            HuffmanNode *current = _root;
-            /** Current position (in bits) */
-            int pos = 0;
-            /** Number of char wrote */
-            int char_count = 0;
+            size_t pos = _pos;
 
-            while (char_count < _file_size) {
-                if ((pos % 256) == 0) {
-                    _input->read(buf, 32);
-                }
+            _result = (uint8_t *) malloc(_original_size);
+            if (_result == NULL) {
+                *buf = NULL;
+                *buflen = 0;
+                return -1;
+            }
 
+            shared_ptr<huffman_node> current = _root;
+            unsigned int result_bytes = 0;
+            unsigned int input_bit_offset = 0;
+
+            while (result_bytes <= _original_size) {
                 // If current bit is 1, go right
                 // Magic, don't touch
-                if (buf[(pos % 256) / 8] & (1 << (pos % 8))) {
-                    if (current->right != NULL) {
-                        current = current->right;
-                    }
+                if ( reinterpret_cast<const uint8_t *>(_input)[pos] & (1 << input_bit_offset) ) {
+                    current = current->right;
                 }
                 else {
-                    if (current->left != NULL) {
-                        current = current->left;
-                    }
+                    current = current->left;
+                }
+
+                if (current == NULL) {
+                    free(_result);
+                    *buf = NULL;
+                    *buflen = 0;
+                    return -1;
                 }
 
                 // Write char if reached leaf node
                 if (current->data >= 0) {
-                    output.put(static_cast<char>(current->data));
-
+                    _result[result_bytes] = current->data;
                     current = _root;
-                    ++char_count;
+                    result_bytes += 1;
                 }
 
-                ++pos;
+                input_bit_offset += 1;
+                if (input_bit_offset >= 8) {
+                    input_bit_offset = 0;
+                    pos += 1;
+                }
             }
+
+            *buf = _result;
+            *buflen = static_cast<int>(_original_size);
+
+            return 0;
         }
     };
 };
 
 int main(int argc, char *argv[])
 {
-    using namespace MyHuffman;
+    using namespace my_huffman;
     using namespace std;
 
-    /** Do compress or uncompress */
-    bool compress = false;
-    /** input file name */
-    const char *input_file = NULL;
-    /** output file name */
-    const char *output_file = NULL;
-
-    if (argc <= 5) {
-        cout << "Usage: " << argv[0] << " (-c|-u) -i inputfile -o outputfile" << endl;
-
-        return 0;
+    if (argc < 4 || (strcmp(argv[1], "-c") != 0 && strcmp(argv[1], "-u") != 0)) {
+        cout << "Usage: " << argv[0] << " <-c|-u> <input> <output>" << endl;
+        return 1;
     }
-    else {
 
-        for (int i = 1; i < argc; ++i) {
-            switch (argv[i][1]) {
-            case 'c':
-                compress = true;
-                break;
+    string pathname_in = argv[2];
 
-            case 'u':
-                compress = false;
-                break;
+    struct stat filestat;
+    int status = stat(pathname_in.c_str(), &filestat);
+    if (status < 0) {
+        perror("stat");
+        return 1;
+    }
+    if (!S_ISREG(filestat.st_mode)) {
+        cout << "Not a regular file." << endl;
+        return 1;
+    }
 
-            case 'i':
-                ++i;
-                input_file = argv[i];
-                break;
+    off_t filesize = filestat.st_size;
+    uint8_t *file_content = new uint8_t[filesize];
 
-            case 'o':
-                ++i;
-                output_file = argv[i];
-                break;
+    ifstream input(pathname_in, fstream::in | fstream::binary);
+    if (!input.is_open()) {
+        cout << "Failed to open file." << endl;
+        return 1;
+    }
 
-            default:
-                break;
-            }
+    input.read(reinterpret_cast<char *>(file_content), filesize);
+
+    if (strcmp(argv[1], "-c") == 0) {
+        huffman_encode encoded(file_content, filesize);
+        const void *encoded_content;
+        int encoded_len;
+        if (encoded.write(&encoded_content, &encoded_len) < 0) {
+            cout << "Error" << endl;
+            return 1;
         }
 
-        if (input_file == NULL || output_file == NULL) {
-            cout << "Usage: " << argv[0] << " (-c|-u) -i inputfile -o outputfile" << endl;
-
-            return 0;
+        ofstream output(argv[3], fstream::out | fstream::binary);
+        if (!output.is_open()) {
+            cout << "Failed to open outupt file." << endl;
+            return 1;
         }
-    }
-
-    ifstream f_in(input_file, ios::in | ios::binary);
-    ofstream f_out(output_file, ios::out | ios::binary);
-
-    if (f_in.fail() | f_out.fail()) {
-        cout << "Fail to open file." << endl;
-
-        return 0;
-    }
-
-    /** Don't know whether compress or uncompress, use base class */
-    Huffman *huffman;
-
-    // Polymorphism
-    if (compress) {
-        huffman = new HuffmanEncode(f_in);
+        output.write(reinterpret_cast<const char *>(encoded_content), static_cast<streamsize>(encoded_len));
     }
     else {
-        huffman = new HuffmanDecode(f_in);
+        huffman_decode decoded(file_content, filesize);
+        const void *decoded_content;
+        int decoded_len;
+        if (decoded.write(&decoded_content, &decoded_len) < 0) {
+            cout << "Error" << endl;
+            return 1;
+        }
+
+        ofstream output(argv[3], fstream::out | fstream::binary);
+        if (!output.is_open()) {
+            cout << "Failed to open outupt file." << endl;
+            return 1;
+        }
+        output.write(reinterpret_cast<const char *>(decoded_content), static_cast<streamsize>(decoded_len));
     }
-
-    huffman->write(f_out);
-
-    // get file size
-    f_in.clear();
-    f_in.seekg(0, ios::end);
-
-    f_out.clear();
-    f_out.seekp(0, ios::end);
-
-    /** compressed file size */
-    int compressed_size = (compress ? f_out.tellp() : f_in.tellg());
-    /** original uncompressed file size */
-    int original_size = (compress ? f_in.tellg() : f_out.tellp());
-
-    cout << "original: ";
-    cout << original_size << endl;
-
-    cout << "compressed: ";
-    cout << compressed_size << endl;
-
-    cout << "compression ratio: ";
-    cout << static_cast<double>(compressed_size) / static_cast<double>(original_size) << endl;
-
-    cout << "Huffman Table:" << endl;
-    huffman->printHuffmanTable();
-
-    delete huffman;
 
     return 0;
 }
