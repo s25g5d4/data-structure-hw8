@@ -1,10 +1,4 @@
-﻿/**
-* purpose: huffman Encoding compression/uncompression
-* name: 吳宗哲 B023040011
-* Date: 2015/01/06
-*/
-
-#include <iostream>
+﻿#include <iostream>
 #include <fstream>
 #include <queue>
 #include <stack>
@@ -467,7 +461,7 @@ namespace my_huffman
             unsigned int result_bytes = 0;
             unsigned int input_bit_offset = 0;
 
-            while (result_bytes <= _original_size) {
+            while (result_bytes < _original_size) {
                 // If current bit is 1, go right
                 // Magic, don't touch
                 if ( reinterpret_cast<const uint8_t *>(_input)[pos] & (1 << input_bit_offset) ) {
@@ -572,6 +566,8 @@ int main(int argc, char *argv[])
         }
         output.write(reinterpret_cast<const char *>(decoded_content), static_cast<streamsize>(decoded_len));
     }
+
+    delete [] file_content;
 
     return 0;
 }
