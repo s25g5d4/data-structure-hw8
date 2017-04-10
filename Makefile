@@ -3,9 +3,9 @@ CXXFLAGS=-Wall -g -std=c++11
 LDFLAGS=-g
 LDLIBS=-lstdc++
 
-all: hw8-B023040011
+all: huffman
 
-hw8: hw8-B023040011.o
+huffman: huffman.o my_huffman.o
 
 clean:
-	rm -f *.o hw8-B023040011
+	rm -f *.o huffman
